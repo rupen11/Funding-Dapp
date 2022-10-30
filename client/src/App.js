@@ -1,36 +1,74 @@
-import { Button, Col, Container, Row, Stack } from "react-bootstrap";
 import "bootstrap/dist/css/bootstrap.min.css";
+import { Button, Col, Container, Row, Stack } from "react-bootstrap";
 import "./App.css";
 import Header from "./components/Header";
 import { useEffect, useState } from "react";
 import Web3 from "web3";
+import detectEthereumProvider from "@metamask/detect-provider";
+import { loadContract } from "./utils/load-contract";
 
 function App() {
     const [web3Api, setWeb3Api] = useState({
         provider: null,
         web3: null,
+        contract: null,
     });
 
     const [account, setAccount] = useState(null);
+    const [balance, setBalance] = useState(0);
+    const [reload, shouldReload] = useState(false);
+
+    const transferFund = async () => {
+        try {
+            const { contract, web3 } = web3Api;
+            await contract.transfer({
+                from: account,
+                value: web3.utils.toWei("2", "ether"),
+            });
+        } catch (error) {
+            console.log(error);
+        }
+        reloadEffect();
+    };
+
+    const withdrawFund = async () => {
+        try {
+            const { contract, web3 } = web3Api;
+            await contract.withdraw(web3.utils.toWei("2", "ether"), {
+                from: account,
+            });
+        } catch (error) {
+            console.log(error);
+        }
+        reloadEffect();
+    };
+
+    const reloadEffect = () => shouldReload(!reload);
 
     useEffect(() => {
         const loadProviders = async () => {
             try {
-                let provider = null;
+                const provider = await detectEthereumProvider();
+                const contract = await loadContract("Funder", provider);
 
-                if (window.ethereum) provider = window.ethereum;
-                else if (window.web3) provider = window.web3.currentProvider;
-                else if (!process.env.production)
-                    provider = new Web3.providers.HttpProvider(
-                        "http://127.0.0.1:7545"
-                    );
+                if (provider) {
+                    provider.request({ method: "eth_requestAccounts" });
+                    setWeb3Api({
+                        web3: new Web3(provider),
+                        provider,
+                        contract,
+                    });
+                } else {
+                    console.error("Please Install Metamask!");
+                }
 
-                await provider.enable();
-
-                setWeb3Api({
-                    web3: new Web3(provider),
-                    provider,
-                });
+                // if (window.ethereum) provider = window.ethereum;
+                // else if (window.web3) provider = window.web3.currentProvider;
+                // else if (!process.env.production)
+                //     provider = new Web3.providers.HttpProvider(
+                //         "http://127.0.0.1:7545"
+                //     );
+                // await provider.enable();
             } catch (error) {
                 console.log(error);
             }
@@ -50,6 +88,15 @@ function App() {
 
         web3Api.web3 && getAccount();
     }, [web3Api.web3]);
+
+    useEffect(() => {
+        const loadBalance = async () => {
+            const { contract, web3 } = web3Api;
+            const balance = await web3.eth.getBalance(contract.address);
+            setBalance(web3.utils.fromWei(balance, "ether"));
+        };
+        web3Api.contract && loadBalance();
+    }, [web3Api, reload]);
 
     return (
         <>
@@ -73,7 +120,7 @@ function App() {
                             {account ? "Connected" : "Not Connected"}
                         </Button>
                         <Stack direction="vertical" gap={3} className="mt-4">
-                            <h1 className="heading">Balance: 100 ETH</h1>
+                            <h1 className="heading">Balance: {balance} ETH</h1>
                             <h4 className="heading">
                                 Account:{" "}
                                 {account ? account : "0x000000000000000000"}
@@ -89,20 +136,26 @@ function App() {
                                 justifyContent: "center",
                             }}
                         >
-                            <Button
-                                variant="success"
-                                onClick={async () => {
-                                    const accounts =
-                                        await window.ethereum.request({
-                                            method: "eth_requestAccounts",
-                                        });
-                                    console.log(accounts);
-                                }}
-                            >
-                                Connect to Metamask
+                            {!account && (
+                                <Button
+                                    variant="success"
+                                    onClick={async () => {
+                                        const accounts =
+                                            await window.ethereum.request({
+                                                method: "eth_requestAccounts",
+                                            });
+                                        console.log(accounts);
+                                    }}
+                                >
+                                    Connect to Metamask
+                                </Button>
+                            )}
+                            <Button variant="success" onClick={transferFund}>
+                                Transfer
                             </Button>
-                            <Button variant="success">Transfer</Button>
-                            <Button variant="primary">Withdraw</Button>
+                            <Button variant="primary" onClick={withdrawFund}>
+                                Withdraw
+                            </Button>
                         </Stack>
                     </Col>
                 </Row>
